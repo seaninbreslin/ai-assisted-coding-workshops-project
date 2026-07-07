@@ -1,13 +1,7 @@
 const STORAGE_KEY = 'kainos-todo:todos';
 
 const state = {
-  todos: [
-    // TODO Task 1: remove these hardcoded todos and load from chrome.storage.local instead
-    { id: 1, text: 'Listen carefully to the trainer 🎧', done: true, createdAt: '2026-01-01T09:00:00.000Z', priority: null },
-    { id: 2, text: 'Stop asking ChatGPT, use Copilot instead', done: false, createdAt: '2026-01-01T10:00:00.000Z', priority: null },
-    { id: 3, text: 'Actually read the prompt before hitting Enter', done: false, createdAt: '2026-01-01T11:00:00.000Z', priority: null },
-    { id: 4, text: 'Work hard on tasks (yes, all 5 of them)', done: false, createdAt: '2026-01-01T12:00:00.000Z', priority: null },
-  ],
+  todos: [],
   filter: 'all',
   aiLoading: false,
 };
@@ -15,31 +9,90 @@ const state = {
 // ── Persistence ────────────────────────────────────────────────
 
 function loadState() {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get([STORAGE_KEY], (result) => {
+      state.todos = Array.isArray(result[STORAGE_KEY]) ? result[STORAGE_KEY] : [];
+      render();
+    });
+    return;
+  }
+
   render();
 }
 
 function saveState() {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.set({ [STORAGE_KEY]: state.todos });
+  }
 }
 
 // ── Business logic ─────────────────────────────────────────────
 
 function addTodo(text) {
+  const trimmedText = text.trim();
+  if (!trimmedText) {
+    return;
+  }
+
+  state.todos.unshift({
+    id: Date.now(),
+    text: trimmedText,
+    done: false,
+    createdAt: new Date().toISOString(),
+    priority: null,
+  });
+
+  saveState();
+  render();
 }
 
 function toggleTodo(id) {
+  state.todos = state.todos.map((todo) => {
+    if (todo.id === id) {
+      return { ...todo, done: !todo.done };
+    }
+
+    return todo;
+  });
+
+  saveState();
+  render();
 }
 
 function deleteTodo(id) {
+  state.todos = state.todos.filter((todo) => todo.id !== id);
+  saveState();
+  render();
 }
 
 function setFilter(filter) {
+  state.filter = filter;
+  render();
 }
 
 function getVisibleTodos() {
+  if (state.filter === 'active') {
+    return state.todos.filter((todo) => !todo.done);
+  }
+
+  if (state.filter === 'done') {
+    return state.todos.filter((todo) => todo.done);
+  }
+
   return state.todos;
 }
 
 function setPriority(id, priority) {
+  state.todos = state.todos.map((todo) => {
+    if (todo.id === id) {
+      return { ...todo, priority };
+    }
+
+    return todo;
+  });
+
+  saveState();
+  render();
 }
 
 // ── Render ─────────────────────────────────────────────────────
@@ -47,7 +100,7 @@ function setPriority(id, priority) {
 function renderList() {
   const list = document.getElementById('todo-list');
   const visible = getVisibleTodos();
-  list.innerHTML = visible.map(todo => `
+  list.innerHTML = visible.map((todo) => `
     <li class="todo-item${todo.done ? ' done' : ''}" data-id="${todo.id}">
       <input class="todo-checkbox" type="checkbox" ${todo.done ? 'checked' : ''} />
       <span class="todo-text">${todo.text}</span>
@@ -55,7 +108,6 @@ function renderList() {
       <button class="btn-delete" title="Delete">✕</button>
     </li>
   `).join('');
-  // TODO Task 2: wire checkbox and delete button via event delegation in initHandlers()
 }
 
 function renderEmptyState() {
@@ -64,11 +116,15 @@ function renderEmptyState() {
 }
 
 function renderFilterBar() {
+  document.querySelectorAll('.filter-btn').forEach((button) => {
+    const isActive = button.dataset.filter === state.filter;
+    button.classList.toggle('active', isActive);
+  });
 }
 
 function renderStats() {
-  const total  = state.todos.length;
-  const done   = state.todos.filter(t => t.done).length;
+  const total = state.todos.length;
+  const done = state.todos.filter((todo) => todo.done).length;
   const active = total - done;
 
   document.getElementById('stats').textContent = `${active} task${active !== 1 ? 's' : ''} left`;
@@ -90,8 +146,51 @@ function render() {
 // ── Event wiring ───────────────────────────────────────────────
 
 function initHandlers() {
+  const addForm = document.getElementById('add-form');
+  const todoInput = document.getElementById('todo-input');
+  const todoList = document.getElementById('todo-list');
+  const filterBar = document.getElementById('filter-bar');
 
-  // Options link
+  addForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    addTodo(todoInput.value);
+    todoInput.value = '';
+    todoInput.focus();
+  });
+
+  todoList.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('.todo-checkbox');
+    if (!checkbox) {
+      return;
+    }
+
+    const todoItem = checkbox.closest('.todo-item');
+    if (todoItem) {
+      toggleTodo(Number(todoItem.dataset.id));
+    }
+  });
+
+  todoList.addEventListener('click', (event) => {
+    const deleteButton = event.target.closest('.btn-delete');
+    if (!deleteButton) {
+      return;
+    }
+
+    const todoItem = deleteButton.closest('.todo-item');
+    if (todoItem) {
+      deleteTodo(Number(todoItem.dataset.id));
+    }
+  });
+
+  filterBar.addEventListener('click', (event) => {
+    const filterButton = event.target.closest('.filter-btn');
+    if (!filterButton) {
+      return;
+    }
+
+    setFilter(filterButton.dataset.filter);
+  });
+
   document.getElementById('options-link').addEventListener('click', (e) => {
     e.preventDefault();
     window.open('options.html');
